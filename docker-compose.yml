@@ -1,0 +1,174 @@
+# TechStream AIOps Stack
+# Services:
+#   web_app       - Buggy Flask application with Golden Signal metrics
+#   prometheus    - Metrics collection + alerting rules
+#   alertmanager  - Alert routing -> remediation webhook
+#   grafana       - Golden Signals dashboards
+#   remediation   - Self-healing service (EventBridge + Lambda equivalent)
+#   ai_analyzer   - AI/ML root cause analysis (DevOps Guru equivalent)
+#   load_gen      - Steady background traffic generator
+#   node_exporter - Host-level metrics (CPU, memory, disk)
+
+networks:
+  monitoring:
+    driver: bridge
+
+volumes:
+  prometheus_data:
+  grafana_data:
+  alertmanager_data:
+
+services:
+
+  # Application
+  web_app:
+    build: ./app
+    container_name: techstream_app
+    ports:
+      - "5000:5000"
+    environment:
+      PORT: "5000"
+    networks:
+      - monitoring
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=false"
+      - "techstream.service=web_app"
+
+  # Monitoring
+  prometheus:
+    image: prom/prometheus:v2.51.2
+    container_name: techstream_prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/alert_rules.yml:/etc/prometheus/alert_rules.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=7d'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    networks:
+      - monitoring
+    restart: unless-stopped
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: techstream_alertmanager
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager_data:/alertmanager
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+      - '--cluster.listen-address='
+    networks:
+      - monitoring
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:10.4.2
+    container_name: techstream_grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: techstream
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/golden-signals.json
+      GF_ALERTING_ENABLED: "false"
+      GF_UNIFIED_ALERTING_ENABLED: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    networks:
+      - monitoring
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+  node_exporter:
+    image: prom/node-exporter:v1.7.0
+    container_name: techstream_node_exporter
+    ports:
+      - "9100:9100"
+    pid: host
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    networks:
+      - monitoring
+    restart: unless-stopped
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    container_name: techstream_cadvisor
+    ports:
+      - "8082:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    privileged: true
+    devices:
+      - /dev/kmsg
+    networks:
+      - monitoring
+    restart: unless-stopped
+
+  # Remediation & AI
+  remediation:
+    build: ./remediation
+    container_name: techstream_remediation
+    ports:
+      - "8085:8080"
+    environment:
+      PORT: "8080"
+      WEBAPP_URL: "http://web_app:5000"
+      AI_ANALYZER_URL: "http://ai_analyzer:9000"
+      WEBHOOK_SECRET: "techstream-webhook-secret"
+    networks:
+      - monitoring
+    depends_on:
+      - web_app
+    restart: unless-stopped
+
+  ai_analyzer:
+    build: ./ai_analyzer
+    container_name: techstream_ai_analyzer
+    ports:
+      - "9000:9000"
+    environment:
+      PORT: "9000"
+      PROMETHEUS_URL: "http://prometheus:9090"
+    networks:
+      - monitoring
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+  # Load Generator
+  load_gen:
+    build: ./load_gen
+    container_name: techstream_load_gen
+    environment:
+      TARGET_URL: "http://web_app:5000"
+    networks:
+      - monitoring
+    depends_on:
+      - web_app
+    restart: unless-stopped
