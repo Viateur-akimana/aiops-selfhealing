@@ -1,0 +1,57 @@
+global:
+  resolve_timeout: 5m
+  smtp_smarthost: 'localhost:587'
+  smtp_from: 'alerts@techstream.internal'
+
+templates:
+  - '/etc/alertmanager/templates/*.tmpl'
+
+route:
+  group_by: ['alertname', 'signal', 'instance']
+  group_wait: 10s
+  group_interval: 30s
+  repeat_interval: 5m
+  receiver: default
+
+  routes:
+    # Critical alerts → remediation webhook + notifications
+    - matchers:
+        - severity="critical"
+      receiver: critical_remediation
+      group_wait: 5s
+      repeat_interval: 2m
+
+    # Warning alerts → notifications only
+    - matchers:
+        - severity="warning"
+      receiver: warning_notify
+      repeat_interval: 10m
+
+receivers:
+  - name: default
+    webhook_configs:
+      - url: 'http://remediation:8080/webhook/alert'
+        send_resolved: true
+        http_config:
+          bearer_token: 'techstream-webhook-secret'
+
+  - name: critical_remediation
+    webhook_configs:
+      - url: 'http://remediation:8080/webhook/alert'
+        send_resolved: true
+        http_config:
+          bearer_token: 'techstream-webhook-secret'
+        max_alerts: 5
+
+  - name: warning_notify
+    webhook_configs:
+      - url: 'http://remediation:8080/webhook/alert'
+        send_resolved: true
+
+inhibit_rules:
+  # If service is completely down, suppress individual signal alerts
+  - source_matchers:
+      - alertname="ServiceDown"
+    target_matchers:
+      - signal=~"errors|latency|saturation"
+    equal: ['instance']

@@ -1,0 +1,127 @@
+{
+  "annotations": { "list": [] },
+  "description": "TechStream Incident & Remediation Timeline",
+  "editable": true,
+  "graphTooltip": 1,
+  "id": null,
+  "panels": [
+    {
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 100,
+      "title": "🚨 Active Alerts",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red",   "value": 1    }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 1 },
+      "id": 1,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      },
+      "title": "Firing Alerts Count",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "count(ALERTS{alertstate=\"firing\"}) or vector(0)",
+          "legendFormat": "Alerts",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "unit": "short" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 18, "x": 6, "y": 1 },
+      "id": 2,
+      "options": {
+        "legend": { "calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true }
+      },
+      "title": "Alert State Over Time",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "ALERTS{job=\"techstream_app\"}",
+          "legendFormat": "{{ alertname }} ({{ severity }})",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 },
+      "id": 101,
+      "title": "📊 All Four Golden Signals — Overlay",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 10 },
+      "id": 20,
+      "options": {
+        "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "right", "showLegend": true }
+      },
+      "title": "Golden Signals — Normalised View",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "rate(http_errors_total[2m]) / (rate(http_requests_total[2m]) + 0.001) * 100",
+          "legendFormat": "Error Rate (%)",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) * 100",
+          "legendFormat": "P95 Latency (×100ms)",
+          "refId": "B"
+        },
+        {
+          "expr": "cpu_saturation_percent",
+          "legendFormat": "CPU Saturation (%)",
+          "refId": "C"
+        },
+        {
+          "expr": "sum(rate(http_requests_total[1m])) * 10",
+          "legendFormat": "Traffic (×10 req/s)",
+          "refId": "D"
+        }
+      ]
+    }
+  ],
+  "refresh": "5s",
+  "schemaVersion": 38,
+  "tags": ["techstream", "incidents"],
+  "time": { "from": "now-1h", "to": "now" },
+  "timezone": "browser",
+  "title": "TechStream — Incident Timeline",
+  "uid": "techstream-incidents",
+  "version": 1
+}

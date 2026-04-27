@@ -1,0 +1,118 @@
+groups:
+  - name: golden_signals
+    interval: 15s
+    rules:
+
+      # ERRORS
+      - alert: HighErrorRate
+        expr: |
+          (
+            rate(http_errors_total[2m]) /
+            (rate(http_requests_total[2m]) + 0.001)
+          ) * 100 > 5
+        for: 30s
+        labels:
+          severity: critical
+          signal: errors
+          team: platform
+        annotations:
+          summary: "High HTTP error rate on {{ $labels.instance }}"
+          description: "Error rate is {{ $value | printf \"%.1f\" }}% (threshold: 5%). Automated remediation triggered."
+          runbook: "https://wiki.techstream.internal/runbooks/high-error-rate"
+
+      - alert: ErrorRateWarning
+        expr: |
+          (
+            rate(http_errors_total[2m]) /
+            (rate(http_requests_total[2m]) + 0.001)
+          ) * 100 > 1
+        for: 1m
+        labels:
+          severity: warning
+          signal: errors
+        annotations:
+          summary: "Elevated error rate on {{ $labels.instance }}"
+          description: "Error rate is {{ $value | printf \"%.1f\" }}% — monitoring closely."
+
+      # LATENCY
+      - alert: HighLatencyP95
+        expr: |
+          histogram_quantile(0.95,
+            rate(http_request_duration_seconds_bucket[5m])
+          ) > 1.0
+        for: 1m
+        labels:
+          severity: critical
+          signal: latency
+        annotations:
+          summary: "P95 latency exceeds 1 s on {{ $labels.instance }}"
+          description: "P95 = {{ $value | printf \"%.2f\" }}s (threshold 1.0s). Possible CPU or database bottleneck."
+
+      - alert: HighLatencyP99
+        expr: |
+          histogram_quantile(0.99,
+            rate(http_request_duration_seconds_bucket[5m])
+          ) > 2.0
+        for: 1m
+        labels:
+          severity: warning
+          signal: latency
+        annotations:
+          summary: "P99 latency exceeds 2 s on {{ $labels.instance }}"
+          description: "P99 = {{ $value | printf \"%.2f\" }}s"
+
+      # SATURATION
+      - alert: HighCPUSaturation
+        expr: cpu_saturation_percent > 80
+        for: 1m
+        labels:
+          severity: critical
+          signal: saturation
+        annotations:
+          summary: "CPU saturation {{ $value | printf \"%.0f\" }}% on {{ $labels.instance }}"
+          description: "CPU has been above 80% for over 1 minute. May indicate runaway process or need to scale."
+
+      - alert: HighMemorySaturation
+        expr: memory_saturation_percent > 85
+        for: 2m
+        labels:
+          severity: warning
+          signal: saturation
+        annotations:
+          summary: "Memory saturation {{ $value | printf \"%.0f\" }}% on {{ $labels.instance }}"
+          description: "Memory above 85% for 2 minutes."
+
+      # TRAFFIC
+      - alert: TrafficDrop
+        expr: |
+          rate(http_requests_total[5m]) < 0.1
+          and
+          rate(http_requests_total[5m] offset 10m) > 0.5
+        for: 2m
+        labels:
+          severity: warning
+          signal: traffic
+        annotations:
+          summary: "Sudden traffic drop on {{ $labels.instance }}"
+          description: "Request rate dropped below 0.1 rps — possible outage or DNS issue."
+
+      # SERVICE HEALTH
+      - alert: ServiceDown
+        expr: service_up == 0
+        for: 15s
+        labels:
+          severity: critical
+          signal: availability
+        annotations:
+          summary: "TechStream service is DOWN on {{ $labels.instance }}"
+          description: "service_up gauge reports 0. Immediate remediation required."
+
+      - alert: ServiceHealthCheckFailing
+        expr: up{job="techstream_app"} == 0
+        for: 30s
+        labels:
+          severity: critical
+          signal: availability
+        annotations:
+          summary: "Prometheus cannot scrape {{ $labels.instance }}"
+          description: "The scrape target is unreachable — the service may have crashed."
